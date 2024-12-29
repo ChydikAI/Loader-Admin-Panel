@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Админ-панель</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-dark text-light">
+<div class="container my-5">
+    <h1 class="text-center mb-4">Админ-панель</h1>
+    <form action="/create" method="POST" class="mb-4">
+    <div class="input-group">
+        <select name="duration" class="form-select" required>
+            <option value="15 minutes">15 минут</option>
+            <option value="30 minutes">30 минут</option>
+            <option value="45 minutes">45 минут</option>
+            <option value="1 hour">1 час</option>
+            <option value="3 hours">3 часа</option>
+            <option value="6 hours">6 часов</option>
+            <option value="12 hours">12 часов</option>
+            <option value="1 day">1 день</option>
+            <option value="3 days">3 дня</option>
+            <option value="7 days">7 дней</option>
+            <option value="14 days">14 дней</option>
+            <option value="30 days">30 дней</option>
+            <option value="60 days">60 дней</option>
+            <option value="90 days">90 дней</option>
+            <option value="180 days">180 дней</option>
+            <option value="360 days">360 дней</option>
+            <option value="LifeTime">Бессрочный</option>
+        </select>
+        <button type="submit" class="btn btn-primary">Создать ключ</button>
+    </div>
+</form>
+<h3>Обновление версии лоадера</h3>
+<form method="POST" action="{{ url_for('update_loader_version') }}">
+    <input type="text" name="loader_version" placeholder="Введите новую версию лоадера" value="{{ settings.loader_version }}">
+    <button type="submit">Обновить версию</button>
+</form>
+
+    <table class="table table-dark table-striped text-center">
+        <thead>
+        <tr>
+            <th>#</th>
+            <th>Ключ</th>
+            <th>HWID</th>
+            <th>IP</th>
+            <th>Истекает</th>
+            <th>Статус</th>
+            <th>Действия</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for key in keys %}
+            <tr>
+                <td>{{ key.id }}</td>
+                <td>{{ key.key }}</td>
+                <td>{{ key.hwid or 'N/A' }}</td>
+                <td>{{ key.ip or 'N/A' }}</td>
+                <td>{{ format_date(key.expires_at) }}</td>
+                <td>
+                    {% if key.is_banned %}
+                        <span class="badge bg-danger">Заблокирован</span>
+                    {% elif key.is_frozen %}
+                        <span class="badge bg-info">Заморожен</span>
+                    {% elif key.expires_at < now %}
+                        <span class="badge bg-warning text-dark">Истёк</span>
+                    {% else %}
+                        <span class="badge bg-success">Активен</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalSystemInfo{{ key.id }}">
+    Системная информация
+</button>
+
+
+                    <div class="modal fade" id="modalSystemInfo{{ key.id }}" tabindex="-1" aria-labelledby="modalSystemInfoLabel{{ key.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalSystemInfoLabel{{ key.id }}">Системная информация</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-dark table-striped">
+                    <tbody>
+                        <tr>
+                            <th>HWID</th>
+                            <td>{{ key.system_info.hwid }}</td>
+                        </tr>
+                        <tr>
+                            <th>Процессор</th>
+                            <td>{{ key.system_info.processor }}</td>
+                        </tr>
+                        <tr>
+                            <th>Материнская плата</th>
+                            <td>{{ key.system_info.motherboard }}</td>
+                        </tr>
+                        <tr>
+                            <th>Версия BIOS</th>
+                            <td>{{ key.system_info.bios_version }}</td>
+                        </tr>
+                        <tr>
+                            <th>Дата BIOS</th>
+                            <td>{{ key.system_info.bios_date }}</td>
+                        </tr>
+                        <tr>
+                            <th>Диск</th>
+                            <td>{{ key.system_info.disk }}</td>
+                        </tr>
+                        <tr>
+                            <th>Видеокарта</th>
+                            <td>{{ key.system_info.gpu }}</td>
+                        </tr>
+                        <tr>
+                            <th>ОЗУ</th>
+                            <td>{{ key.system_info.ram }} ГБ</td>
+                        </tr>
+                        <tr>
+                            <th>Монитор</th>
+                            <td>{{ key.system_info.monitor }}</td>
+                        </tr>
+                        <tr>
+                            <th>Операционная система</th>
+                            <td>{{ key.system_info.os_name }}</td>
+                        </tr>
+                        <tr>
+                            <th>Архитектура</th>
+                            <td>{{ key.system_info.arch }}</td>
+                        </tr>
+                        <tr>
+                            <th>MAC-адрес</th>
+                            <td>{{ key.system_info.mac_address }}</td>
+                        </tr>
+                        <tr>
+                            <th>Внешний IP</th>
+                            <td>{{ key.system_info.ip }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <form action="/reset_hwid/{{ key.id }}" method="POST" class="d-inline">
+                    <button type="submit" class="btn btn-warning">Сбросить HWID</button>
+                </form>
+                <form action="/ban_key/{{ key.id }}" method="POST" class="d-inline">
+                    {% if key.is_banned %}
+                        <button type="submit" class="btn btn-success">Разблокировать</button>
+                    {% else %}
+                        <button type="submit" class="btn btn-danger">Заблокировать</button>
+                    {% endif %}
+                </form>
+                <form action="/freeze_key/{{ key.id }}" method="POST" class="d-inline">
+                    {% if key.is_frozen %}
+                        <button type="submit" class="btn btn-secondary">Разморозить</button>
+                    {% else %}
+                        <button type="submit" class="btn btn-info">Заморозить</button>
+                    {% endif %}
+                </form>
+                <form action="/add_time/{{ key.id }}" method="POST" class="d-inline">
+                    <div class="input-group">
+                        <input type="number" name="days" class="form-control" placeholder="Добавить дней" required>
+                        <button type="submit" class="btn btn-success">Добавить время</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
