@@ -1,18 +1,18 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import random
 import string
-
+from flask_cors import CORS
 app = Flask(__name__)
-app.secret_key = 'dasda12123adssd123adsasd123dsaESQWEQWASDASDASDAS1223EWDSAWD'
-
-
+CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///keys.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.secret_key = 'randomsecretkey1234'
 db = SQLAlchemy(app)
 
 
+# Модели данных
 class SystemInfo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key_id = db.Column(db.Integer, db.ForeignKey('key.id'), nullable=False)
@@ -57,6 +57,7 @@ class Settings(db.Model):
     loader_version = db.Column(db.String(16), nullable=False, default="1.0.0")
 
 
+
 with app.app_context():
     db.create_all()
     if not Settings.query.first():
@@ -64,43 +65,21 @@ with app.app_context():
         db.session.commit()
 
 
+
 def generate_key():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=32))
 
-@app.route('/update_loader_version', methods=['POST'])
-def update_loader_version():
-    try:
-        loader_version = request.form.get('loader_version')
-        if not loader_version:
-            raise ValueError("Не указана версия лоадера")
-
-        settings = Settings.query.first()
-        settings.loader_version = loader_version
-        db.session.commit()
-        flash('Глобальная версия лоадера успешно обновлена!', 'success')
-    except Exception as e:
-        flash(f'Ошибка при обновлении версии лоадера: {str(e)}', 'danger')
-    return redirect(url_for('admin_panel'))
 
 
-@app.route('/')
-def admin_panel():
-    keys = Key.query.all()
-    now = datetime.utcnow()
-    settings = Settings.query.first()
-    return render_template('admin.html', keys=keys, now=now, format_date=format_date, settings=settings)
-
-
-@app.route('/create', methods=['POST'])
+@app.route('/api/keys', methods=['POST'])
 def create_key():
     try:
-        duration_str = request.form.get('duration')
+        duration_str = request.json.get('duration')
         if not duration_str:
-            raise ValueError("Не указана длительность")
-
+            return jsonify({"error": "Не указана длительность"}), 400
 
         if duration_str == "LifeTime":
-            expires_at = timedelta(days=999999)
+            expires_at = datetime.utcnow() + timedelta(days=999999)
         else:
             duration_map = {
                 "minutes": timedelta(minutes=1),
@@ -117,86 +96,82 @@ def create_key():
         )
         db.session.add(new_key)
         db.session.commit()
-        flash('Ключ успешно создан!', 'success')
+        return jsonify({'key': new_key.key, 'expires_at': expires_at.isoformat()}), 201
     except Exception as e:
-        flash(f'Ошибка при создании ключа: {str(e)}', 'danger')
-    return redirect(url_for('admin_panel'))
+        return jsonify({"error": f"Ошибка при создании ключа: {str(e)}"}), 500
 
 
-@app.route('/delete/<int:key_id>', methods=['POST'])
-def delete_key(key_id):
-    key = Key.query.get_or_404(key_id)
+@app.route('/api/keys', methods=['GET'])
+def get_all_keys():
     try:
-        db.session.delete(key)
-        db.session.commit()
-        flash('Ключ успешно удален!', 'success')
+        keys = Key.query.all()
+        key_data = [{
+            "id": key.id,
+            "key": key.key,
+            "expires_at": key.expires_at,
+            "is_frozen": key.is_frozen,
+            "is_banned": key.is_banned,
+            "is_bsod": key.is_bsod,
+            "created_at": key.created_at
+        } for key in keys]
+
+        return jsonify(key_data), 200
     except Exception as e:
-        flash(f'Ошибка при удалении ключа: {str(e)}', 'danger')
-    return redirect(url_for('admin_panel'))
+        return jsonify({"error": f"Ошибка при получении ключей: {str(e)}"}), 500
 
 
-@app.route('/add_time/<int:key_id>', methods=['POST'])
-def add_time(key_id):
-    key = Key.query.get_or_404(key_id)
+# Роут для получения информации о ключе
+@app.route('/api/keys/<string:key_str>', methods=['GET'])
+def get_key_info(key_str):
+    key = Key.query.filter_by(key=key_str).first()
+    if not key:
+        return jsonify({"error": "Ключ не найден"}), 404
+
+    key_info = {
+        'key': key.key,
+        'expires_at': key.expires_at.isoformat(),
+        'is_frozen': key.is_frozen,
+        'is_banned': key.is_banned,
+        'is_bsod': key.is_bsod,
+        'hwid': key.hwid,
+        'created_at': key.created_at.isoformat(),
+    }
+    return jsonify(key_info)
+
+
+
+@app.route('/api/keys/<string:key_str>/auth_history', methods=['GET'])
+def get_auth_history(key_str):
+    key = Key.query.filter_by(key=key_str).first()
+    if not key:
+        return jsonify({"error": "Ключ не найден"}), 404
+
+    logs = KeyLog.query.filter_by(key_id=key.id).all()
+    return jsonify([{
+        'timestamp': log.timestamp.isoformat(),
+        'ip': log.ip,
+        'status': log.status
+    } for log in logs])
+
+
+# Роут для обновления версии лоадера
+@app.route('/api/settings/loader_version', methods=['PUT'])
+def update_loader_version():
     try:
-        days = int(request.form.get('days', 0))
-        key.expires_at += timedelta(days=days)
+        loader_version = request.json.get('loader_version')
+        if not loader_version:
+            return jsonify({"error": "Не указана версия лоадера"}), 400
+
+        settings = Settings.query.first()
+        settings.loader_version = loader_version
         db.session.commit()
-        flash('Время успешно добавлено!', 'success')
+        return jsonify({'message': 'Версия лоадера обновлена'}), 200
     except Exception as e:
-        flash(f'Ошибка при добавлении времени: {str(e)}', 'danger')
-    return redirect(url_for('admin_panel'))
+        return jsonify({"error": f"Ошибка при обновлении версии лоадера: {str(e)}"}), 500
 
 
-@app.route('/freeze_key/<int:key_id>', methods=['POST'])
-def freeze_key(key_id):
-    key = Key.query.get_or_404(key_id)
-    try:
-        key.is_frozen = not key.is_frozen
-        db.session.commit()
-        flash('Статус заморозки изменён!', 'success')
-    except Exception as e:
-        flash(f'Ошибка при изменении статуса: {str(e)}', 'danger')
-    return redirect(url_for('admin_panel'))
-
-
-@app.route('/ban_key/<int:key_id>', methods=['POST'])
-def ban_key(key_id):
-    key = Key.query.get_or_404(key_id)
-    try:
-        key.is_banned = not key.is_banned
-        db.session.commit()
-        flash('Статус блокировки изменён!', 'success')
-    except Exception as e:
-        flash(f'Ошибка при изменении блокировки: {str(e)}', 'danger')
-    return redirect(url_for('admin_panel'))
-
-
-@app.route('/toggle_bsod/<int:key_id>', methods=['POST'])
-def toggle_bsod(key_id):
-    key = Key.query.get_or_404(key_id)
-    try:
-        key.is_bsod = not key.is_bsod
-        db.session.commit()
-        flash('Статус BSOD изменён!', 'success')
-    except Exception as e:
-        flash(f'Ошибка при изменении BSOD: {str(e)}', 'danger')
-    return redirect(url_for('admin_panel'))
-
-
-@app.route('/reset_hwid/<int:key_id>', methods=['POST'])
-def reset_hwid(key_id):
-    key = Key.query.get_or_404(key_id)
-    try:
-        key.hwid = None
-        db.session.commit()
-        flash('HWID успешно сброшен!', 'success')
-    except Exception as e:
-        flash(f'Ошибка при сбросе HWID: {str(e)}', 'danger')
-    return redirect(url_for('admin_panel'))
-
-
-@app.route('/validate', methods=['POST'])
+# Роут для валидации ключа
+@app.route('/api/validate', methods=['POST'])
 def validate_key():
     required_fields = ['key', 'hwid', 'system_info', 'loader_version']
     system_info_fields = [
@@ -208,6 +183,7 @@ def validate_key():
         data = request.json
         if not data:
             return jsonify({"valid": False, "error": "Данные запроса отсутствуют"}), 400
+        print(f"Получены данные: {data}")
 
         for field in required_fields:
             if field not in data:
@@ -273,33 +249,94 @@ def validate_key():
         return jsonify({"valid": True, "message": "Ключ активен"}), 200
 
     except Exception as e:
+        print(f"Ошибка при обработке запроса: {str(e)}")  # Логирование ошибки
         return jsonify({"valid": False, "error": f"Ошибка обработки запроса: {str(e)}"}), 500
 
-@app.route('/auth_history/<int:key_id>', methods=['GET'])
-def auth_history(key_id):
-    logs = KeyLog.query.filter_by(key_id=key_id).all()
-    return jsonify([{
-        'timestamp': log.timestamp,
-        'ip': log.ip,
-        'status': log.status
-    } for log in logs])
 
-def format_date(date):
-    now = datetime.utcnow()
-    delta = now - date
 
-    if date.date() == now.date():
-        return f"Сегодня в {date.strftime('%H:%M')}"
-    elif date.date() == (now - timedelta(days=1)).date():
-        return f"Вчера в {date.strftime('%H:%M')}"
-    elif 1 < delta.days <= 7:
-        days_of_week = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-        weekday = days_of_week[date.weekday()]
-        return f"{weekday} в {date.strftime('%H:%M')}"
-    elif now.year == date.year:
-        return date.strftime('%d %B в %H:%M')
-    else:
-        return date.strftime('%d.%m.%Y в %H:%M')
+
+@app.route('/api/keys/<string:key_str>/freeze', methods=['POST'])
+def toggle_freeze_key(key_str):
+    key = Key.query.filter_by(key=key_str).first()
+    if not key:
+        return jsonify({"error": "Ключ не найден"}), 404
+
+    key.is_frozen = not key.is_frozen
+    db.session.commit()
+    return jsonify({"message": f"Статус заморозки изменён на {key.is_frozen}"}), 200
+
+
+
+@app.route('/api/keys/<string:key_str>/ban', methods=['POST'])
+def toggle_ban_key(key_str):
+    key = Key.query.filter_by(key=key_str).first()
+    if not key:
+        return jsonify({"error": "Ключ не найден"}), 404
+
+    key.is_banned = not key.is_banned
+    db.session.commit()
+    return jsonify({"message": f"Статус блокировки изменён на {key.is_banned}"}), 200
+
+
+
+@app.route('/api/keys/<string:key_str>/reset_hwid', methods=['POST'])
+def reset_hwid(key_str):
+    key = Key.query.filter_by(key=key_str).first()
+    if not key:
+        return jsonify({"error": "Ключ не найден"}), 404
+
+    key.hwid = None
+    db.session.commit()
+    return jsonify({"message": "HWID сброшен"}), 200
+
+
+
+@app.route('/api/keys/<string:key_str>/add_time', methods=['POST'])
+def add_time(key_str):
+    key = Key.query.filter_by(key=key_str).first()
+    if not key:
+        return jsonify({"error": "Ключ не найден"}), 404
+
+    days = request.json.get('days', 0)
+    if days <= 0:
+        return jsonify({"error": "Не указано количество дней"}), 400
+
+    key.expires_at += timedelta(days=days)
+    db.session.commit()
+    return jsonify({"message": f"Время добавлено, новый срок: {key.expires_at.isoformat()}"}), 200
+
+
+@app.route('/api/key/<int:key_id>/system_info', methods=['GET'])
+def get_system_info(key_id):
+    try:
+
+        key = Key.query.get_or_404(key_id)
+
+
+        system_info = key.system_info
+        if not system_info:
+            return jsonify({"error": "Системная информация для этого ключа отсутствует"}), 404
+
+        # Формируем ответ
+        system_info_data = {
+            "processor": system_info.processor,
+            "motherboard": system_info.motherboard,
+            "bios_version": system_info.bios_version,
+            "bios_date": system_info.bios_date,
+            "disk": system_info.disk,
+            "gpu": system_info.gpu,
+            "ram": system_info.ram,
+            "monitor": system_info.monitor,
+            "os_name": system_info.os_name,
+            "arch": system_info.arch,
+            "mac_address": system_info.mac_address,
+            "ip": system_info.ip
+        }
+
+        return jsonify(system_info_data), 200
+    except Exception as e:
+        return jsonify({"error": f"Ошибка при получении системной информации: {str(e)}"}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)

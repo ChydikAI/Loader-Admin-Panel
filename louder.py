@@ -1,24 +1,22 @@
 import ctypes
-import sys
-import time
-import platform
-import os
 import hashlib
-import uuid
+import os
+import platform
 import random
-import requests
-import psutil
-import socket
-from time import sleep
-from datetime import datetime, UTC
-from colorama import Fore, Style, init
-import wmi
+import sys
 import threading
+import time
+import uuid
+from time import sleep
+
+import requests
+import wmi
+from colorama import Fore, Style, init
 
 init(autoreset=True)
 
 
-API_URL = 'http://127.0.0.1:5000/validate'
+API_URL = 'http://127.0.0.1:5000/api/validate'
 KEY_PATH = 'C:\\key.txt'
 
 def random_console_title():
@@ -220,7 +218,7 @@ def main_menu():
         loading_animation("Проверка системы", 5)
         display_system_info(hwid, cpu, motherboard, bios_version, bios_date, disk, gpu, ram, monitor, os_name, arch, mac_address, ip)
 
-        loader_version = "1.1"
+        loader_version = "1.0.0"
 
         if validate_key(key, hwid, cpu, motherboard, bios_version, bios_date, disk, gpu, ram, monitor, os_name, arch, mac_address, ip, loader_version):
             print(Fore.GREEN + "Авторизация успешна!")
